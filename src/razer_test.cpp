@@ -141,12 +141,8 @@ bool getDeviceInfoFromJson(QJsonObject deviceObj, QString *name, QString *type, 
         features->append(featureVal.toString());
     }
     foreach (const QJsonValue &quirkVal, deviceObj["quirks"].toArray()) {
-        if (quirkVal.toString() == "mouse_matrix") {
-            quirks->append(RazerDeviceQuirks::MouseMatrix);
-        } else if (quirkVal.toString() == "matrix_brightness") {
-            quirks->append(RazerDeviceQuirks::MatrixBrightness);
-        } else if (quirkVal.toString() == "firefly_custom_frame") {
-            quirks->append(RazerDeviceQuirks::FireflyCustomFrame);
+        if (StringToQuirks.contains(quirkVal.toString())) {
+            quirks->append(StringToQuirks.value(quirkVal.toString()));
         } else {
             qCritical("Unhandled quirks string!");
         }

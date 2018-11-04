@@ -20,6 +20,9 @@
 #include "../validjsonvalues.h"
 #include "../device/razermatrixdevice.h"
 
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QTextStream>
 
 #include <iostream>
@@ -33,6 +36,7 @@ bool BringupUtil::newDevice()
     QTextStream cin(stdin);
 
     QString input;
+    bool inputValid = true;
 
     QString name;
     QString vid;
@@ -55,10 +59,12 @@ bool BringupUtil::newDevice()
     }
 
     QVector<RazerLedId> ledIds = {RazerLedId::ScrollWheelLED, RazerLedId::BatteryLED, RazerLedId::LogoLED, RazerLedId::BacklightLED, RazerLedId::MacroRecordingLED, RazerLedId::GameModeLED, RazerLedId::KeymapRedLED, RazerLedId::KeymapGreenLED, RazerLedId::KeymapBlueLED, RazerLedId::RightSideLED, RazerLedId::LeftSideLED};
+    QStringList fx = validFx;
+    QStringList features = validFeatures;
     QVector<RazerDeviceQuirks> quirks = {};
     MatrixDimensions dims = {};
     ushort maxDPI = 0;
-    RazerDevice *device = new RazerMatrixDevice(dev->path, dev->vendor_id, dev->product_id, name, type, ledIds, validFx, validFeatures, quirks, dims, maxDPI);
+    RazerDevice *device = new RazerMatrixDevice(dev->path, dev->vendor_id, dev->product_id, name, type, ledIds, fx, features, quirks, dims, maxDPI);
     if (!device->openDeviceHandle()) {
         qCritical("Failed to open device handle.");
         qCritical("You can give your current user permissions to access the hidraw nodes with the following commands:");
@@ -73,16 +79,20 @@ bool BringupUtil::newDevice()
         return true;
     }
 
-    qInfo("What is your device type?");
-    qInfo("Valid types: ");
-    for (auto value : validType)
-        qInfo("- %s", qUtf8Printable(value));
-    std::cout << "> ";
-    cin >> type;
-    if (!validType.contains(type)) {
-        qCritical("Invalid device type.");
-        return true;
-    }
+    do {
+        qInfo("What is your device type?");
+        qInfo("Valid types: ");
+        for (auto value : validType)
+            qInfo("- %s", qUtf8Printable(value));
+        std::cout << "> ";
+        cin >> type;
+        if (!validType.contains(type)) {
+            qCritical("Invalid device type.");
+            inputValid = false;
+        } else {
+            inputValid = true;
+        }
+    } while (!inputValid);
 
     for (auto led : device->getLeds()) {
         led->setNone();
@@ -97,7 +107,7 @@ bool BringupUtil::newDevice()
     ledIds.clear();
     for (auto led : device->getLeds()) {
         led->setStatic({0xFF, 0xFF, 0x00});
-        qInfo("Did a LED just turn yellow? (y/n)");
+        qInfo("Did a LED just turn yellow (tried %s)? (y/n)", qUtf8Printable(LedIdToString.value(led->getLedId())));
         std::cout << "> ";
         cin >> input;
         if (input.compare("y", Qt::CaseInsensitive) == 0) {
@@ -109,6 +119,47 @@ bool BringupUtil::newDevice()
         qInfo("You said that no LED is supported. Exiting. TODO: quirks"); // TODO
         return true;
     }
+
+    if (type == "mouse") {
+        QString maxDPIstr;
+        do {
+            qInfo("What's the maximum DPI of the mouse (e.g. 16000)?");
+            std::cout << "> ";
+            cin >> maxDPIstr;
+            maxDPI = maxDPIstr.toUInt(nullptr, 10);
+            if (maxDPI == 0) {
+                qCritical("Invalid DPI.");
+                inputValid = false;
+            } else {
+                inputValid = true;
+            }
+        } while (!inputValid);
+    }
+
+    QJsonArray ledIdsJson;
+    for (auto ledId : ledIds)
+        ledIdsJson.append(static_cast<uchar>(ledId));
+    QJsonArray quirksJson;
+    for (auto quirk : quirks)
+        quirksJson.append(QuirksToString.value(quirk));
+    QJsonArray dimsJson = {dims.x, dims.y};
+
+    QJsonObject deviceObj {
+        {"name", name},
+        {"vid", vid},
+        {"pid", pid},
+        {"type", type},
+        {"pclass", "matrix"}, // TODO
+        {"leds", ledIdsJson},
+        {"fx", QJsonArray::fromStringList(fx)}, // TODO
+        {"features", QJsonArray::fromStringList(features)},
+        {"quirks", quirksJson},
+        {"matrix_dimensions", dimsJson},
+        {"max_dpi", maxDPI}
+    };
+    QJsonDocument doc(deviceObj);
+    QString jsonString = doc.toJson(QJsonDocument::Indented);
+    qInfo("%s", qUtf8Printable(jsonString));
 
     return true;
 }
