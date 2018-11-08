@@ -21,16 +21,24 @@
 
 #include <hidapi.h>
 
+#include "../device/razerdevice.h"
+
 /**
  * @todo write docs
  */
 class BringupUtil
 {
 public:
-    BringupUtil(struct hid_device_info *dev);
+    BringupUtil(struct hid_device_info *hid_dev_info);
+    BringupUtil(RazerDevice *device);
     bool newDevice();
+
+    bool testDPI();
+    bool testPollRate();
+    bool testKeyboardLayout();
 private:
-    struct hid_device_info *dev;
+    struct hid_device_info *hid_dev_info;
+    RazerDevice *device;
 };
 
 #endif // BRINGUPUTIL_H

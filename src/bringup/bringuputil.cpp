@@ -27,7 +27,11 @@
 
 #include <iostream>
 
-BringupUtil::BringupUtil(struct hid_device_info *dev) : dev(dev)
+BringupUtil::BringupUtil(struct hid_device_info *hid_dev_info) : hid_dev_info(hid_dev_info)
+{
+}
+
+BringupUtil::BringupUtil(RazerDevice *device) : device(device)
 {
 }
 
@@ -51,11 +55,11 @@ bool BringupUtil::newDevice()
     QString type;
 
     qInfo("== razer_test bringup util ==");
-    name = QString::fromWCharArray(dev->product_string);
+    name = QString::fromWCharArray(hid_dev_info->product_string);
     qInfo("Product: %s", qUtf8Printable(name));
-    vid = QString::number(dev->vendor_id, 16).rightJustified(4, '0');
+    vid = QString::number(hid_dev_info->vendor_id, 16).rightJustified(4, '0');
     qInfo("VID: %s", qUtf8Printable(vid));
-    pid = QString::number(dev->product_id, 16).rightJustified(4, '0');
+    pid = QString::number(hid_dev_info->product_id, 16).rightJustified(4, '0');
     qInfo("PID: %s", qUtf8Printable(pid));
     qInfo("Do you want to bring up this new device? (y/N)");
     std::cout << "> ";
@@ -75,7 +79,7 @@ bool BringupUtil::newDevice()
     RazerDevice *device;
     int quirksCombinationsIndex = 0;
     do {
-        device = new RazerMatrixDevice(dev->path, dev->vendor_id, dev->product_id, name, type, ledIds, fx, features, quirks, dims, maxDPI);
+        device = new RazerMatrixDevice(hid_dev_info->path, hid_dev_info->vendor_id, hid_dev_info->product_id, name, type, ledIds, fx, features, quirks, dims, maxDPI);
         if (!device->openDeviceHandle()) {
             qCritical("Failed to open device handle.");
             qCritical("You can give your current user permissions to access the hidraw nodes with the following commands:");
@@ -87,7 +91,7 @@ bool BringupUtil::newDevice()
         if (!device->initialize()) {
             qWarning("Failed to initialize leds, trying out quirks.");
             delete device;
-            if(quirksCombinationsIndex >= quirksCombinations.size()) {
+            if (quirksCombinationsIndex >= quirksCombinations.size()) {
                 qCritical("Tried all quirks combinations and none helped.");
                 return true;
             }
@@ -124,7 +128,7 @@ bool BringupUtil::newDevice()
     if (ledIds.isEmpty()) {
         qInfo("You said that no LED is supported. Exiting. TODO: quirks"); // TODO
         return true;
-    } else if(ledIds.size() == allLedIds.size()) {
+    } else if (ledIds.size() == allLedIds.size()) {
         qInfo("You said that all LEDs do something. This is most likely not true. If the same zone is always lighting up, please choose only 'backlight'. Exiting.");
         return true;
     }
@@ -158,6 +162,10 @@ bool BringupUtil::newDevice()
                 inputValid = true;
             }
         } while (!inputValid);
+    } else {
+        // TODO: Properly check :)
+        features.removeOne("dpi");
+        features.removeOne("poll_rate");
     }
 
     QJsonArray ledIdsJson;
@@ -176,14 +184,77 @@ bool BringupUtil::newDevice()
         {"pclass", "matrix"}, // TODO
         {"leds", ledIdsJson},
         {"fx", QJsonArray::fromStringList(fx)}, // TODO
-        {"features", QJsonArray::fromStringList(features)},
+        {"features", QJsonArray::fromStringList(features)}, // TODO
         {"quirks", quirksJson},
         {"matrix_dimensions", dimsJson},
         {"max_dpi", maxDPI}
     };
+    if (type != "mouse") {
+        deviceObj.remove("max_dpi");
+    }
+
     QJsonDocument doc(deviceObj);
     QString jsonString = doc.toJson(QJsonDocument::Indented);
     qInfo("%s", qUtf8Printable(jsonString));
 
     return true;
+}
+
+bool BringupUtil::testDPI()
+{
+    auto dpi = device->getDPI();
+    if (dpi.dpi_x == 0 && dpi.dpi_y == 0) {
+        qInfo("Failed to get current DPI.");
+        return false;
+    }
+    qInfo("The current DPI is: %hu - %hu", dpi.dpi_x, dpi.dpi_y);
+    RazerDPI newDPI = {500, 600};
+    device->setDPI(newDPI);
+    auto dpi2 = device->getDPI();
+    if (dpi2.dpi_x != newDPI.dpi_x || dpi2.dpi_y != newDPI.dpi_y) {
+        qInfo("Failed setting DPI. A: %hu - %hu, B: %hu - %hu", newDPI.dpi_x, newDPI.dpi_y, dpi2.dpi_x, dpi2.dpi_y);
+        return false;
+    }
+    // Reset DPI back
+    device->setDPI(dpi);
+    return true;
+}
+
+bool BringupUtil::testPollRate()
+{
+    auto pollRate = device->getPollRate();
+    if (pollRate == 0) {
+        qInfo("Failed to get current poll rate.");
+        return false;
+    }
+    qInfo("The current poll rate is: %hu", pollRate);
+    ushort newPollRate;
+    if (pollRate == 1000)
+        newPollRate = 500;
+    else
+        newPollRate = 1000;
+    device->setPollRate(newPollRate);
+    auto pollRate2 = device->getPollRate();
+    if (pollRate2 != newPollRate) {
+        qInfo("Failed setting poll rate. A: %hu, B: %hu", newPollRate, pollRate2);
+        return false;
+    }
+    // Reset poll rate back
+    device->setPollRate(pollRate);
+    return true;
+}
+
+bool BringupUtil::testKeyboardLayout()
+{
+    auto layout = device->getKeyboardLayout();
+    if (layout == "error") {
+        qInfo("Failed to determine keyboard layout.");
+        return false;
+    } else if (layout == "unknown") {
+        qInfo("Failed to determine keyboard layout. Either yours is unknown (you can get the ID output when you use the --verbose parameter) or your device doesn't support this call.");
+        return false;
+    } else {
+        qInfo("Your keyboard layout is: %s", qUtf8Printable(layout));
+        return true;
+    }
 }

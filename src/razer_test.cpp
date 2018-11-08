@@ -338,6 +338,11 @@ int main(int argc, char *argv[])
             led->setStatic({0xFF, 0xFF, 0x00});
             led->setBrightness(255);
         }
+
+        BringupUtil bringupUtil = BringupUtil(razerDevice);
+        bringupUtil.testKeyboardLayout();
+        bringupUtil.testDPI();
+        bringupUtil.testPollRate();
     }
     return 0;
 
