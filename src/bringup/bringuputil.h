@@ -30,8 +30,6 @@ public:
     BringupUtil(struct hid_device_info *dev);
     bool newDevice();
 private:
-
-
     struct hid_device_info *dev;
 };
 

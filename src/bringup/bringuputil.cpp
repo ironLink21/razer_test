@@ -31,6 +31,13 @@ BringupUtil::BringupUtil(struct hid_device_info *dev) : dev(dev)
 {
 }
 
+const QVector<QVector<RazerDeviceQuirks>> quirksCombinations {
+    {},
+    {RazerDeviceQuirks::MouseMatrix},
+    {RazerDeviceQuirks::MouseMatrix, RazerDeviceQuirks::MatrixBrightness},
+    {RazerDeviceQuirks::MatrixBrightness}
+};
+
 bool BringupUtil::newDevice()
 {
     QTextStream cin(stdin);
@@ -50,32 +57,75 @@ bool BringupUtil::newDevice()
     qInfo("VID: %s", qUtf8Printable(vid));
     pid = QString::number(dev->product_id, 16).rightJustified(4, '0');
     qInfo("PID: %s", qUtf8Printable(pid));
-    qInfo("Do you want to bring up this new device? (y/n)");
+    qInfo("Do you want to bring up this new device? (y/N)");
     std::cout << "> ";
-    cin >> input;
+    input = cin.readLine();
     if (input.compare("y", Qt::CaseInsensitive) != 0) {
         qInfo("Exiting bringup util.");
         return false;
     }
 
-    QVector<RazerLedId> ledIds = {RazerLedId::ScrollWheelLED, RazerLedId::BatteryLED, RazerLedId::LogoLED, RazerLedId::BacklightLED, RazerLedId::MacroRecordingLED, RazerLedId::GameModeLED, RazerLedId::KeymapRedLED, RazerLedId::KeymapGreenLED, RazerLedId::KeymapBlueLED, RazerLedId::RightSideLED, RazerLedId::LeftSideLED};
+    QVector<RazerLedId> allLedIds = {RazerLedId::ScrollWheelLED, RazerLedId::BatteryLED, RazerLedId::LogoLED, RazerLedId::BacklightLED, RazerLedId::MacroRecordingLED, RazerLedId::GameModeLED, RazerLedId::KeymapRedLED, RazerLedId::KeymapGreenLED, RazerLedId::KeymapBlueLED, RazerLedId::RightSideLED, RazerLedId::LeftSideLED};
+    QVector<RazerLedId> ledIds = allLedIds;
     QStringList fx = validFx;
     QStringList features = validFeatures;
-    QVector<RazerDeviceQuirks> quirks = {};
+    QVector<RazerDeviceQuirks> quirks = quirksCombinations.at(0);
     MatrixDimensions dims = {};
     ushort maxDPI = 0;
-    RazerDevice *device = new RazerMatrixDevice(dev->path, dev->vendor_id, dev->product_id, name, type, ledIds, fx, features, quirks, dims, maxDPI);
-    if (!device->openDeviceHandle()) {
-        qCritical("Failed to open device handle.");
-        qCritical("You can give your current user permissions to access the hidraw nodes with the following commands:");
-        qCritical("$ sudo chmod g+rw /dev/hidraw*");
-        qCritical("$ sudo chgrp $(id -g) /dev/hidraw*");
-        delete device;
+    RazerDevice *device;
+    int quirksCombinationsIndex = 0;
+    do {
+        device = new RazerMatrixDevice(dev->path, dev->vendor_id, dev->product_id, name, type, ledIds, fx, features, quirks, dims, maxDPI);
+        if (!device->openDeviceHandle()) {
+            qCritical("Failed to open device handle.");
+            qCritical("You can give your current user permissions to access the hidraw nodes with the following commands:");
+            qCritical("$ sudo chmod g+rw /dev/hidraw*");
+            qCritical("$ sudo chgrp $(id -g) /dev/hidraw*");
+            delete device;
+            return true;
+        }
+        if (!device->initialize()) {
+            qWarning("Failed to initialize leds, trying out quirks.");
+            delete device;
+            if(quirksCombinationsIndex >= quirksCombinations.size()) {
+                qCritical("Tried all quirks combinations and none helped.");
+                return true;
+            }
+            quirks = quirksCombinations.at(quirksCombinationsIndex++);
+            inputValid = false;
+        } else {
+            qInfo("Successfully initialized LEDs.");
+            inputValid = true;
+        }
+    } while (!inputValid);
+
+    for (auto led : device->getLeds()) {
+        led->setNone();
+    }
+    qInfo("Now all LEDs should be off. Is that correct? (y/N)");
+    std::cout << "> ";
+    input = cin.readLine();
+    if (input.compare("y", Qt::CaseInsensitive) != 0) {
+        qInfo("That's bad :( Exiting for now (TODO: Test out existing quirks if they help)"); // TODO
         return true;
     }
-    if (!device->initialize()) {
-        qCritical("Failed to initialize leds.");
-        delete device;
+    ledIds.clear();
+    for (auto led : device->getLeds()) {
+        led->setStatic({0xFF, 0xFF, 0x00});
+        qInfo("Did a LED just turn yellow (tried %s)? (y/N)", qUtf8Printable(LedIdToString.value(led->getLedId())));
+        std::cout << "> ";
+        input = cin.readLine();
+        if (input.compare("y", Qt::CaseInsensitive) == 0) {
+            ledIds.append(led->getLedId());
+        }
+        led->setNone();
+        QThread::msleep(500);
+    }
+    if (ledIds.isEmpty()) {
+        qInfo("You said that no LED is supported. Exiting. TODO: quirks"); // TODO
+        return true;
+    } else if(ledIds.size() == allLedIds.size()) {
+        qInfo("You said that all LEDs do something. This is most likely not true. If the same zone is always lighting up, please choose only 'backlight'. Exiting.");
         return true;
     }
 
@@ -85,7 +135,7 @@ bool BringupUtil::newDevice()
         for (auto value : validType)
             qInfo("- %s", qUtf8Printable(value));
         std::cout << "> ";
-        cin >> type;
+        type = cin.readLine();
         if (!validType.contains(type)) {
             qCritical("Invalid device type.");
             inputValid = false;
@@ -94,38 +144,12 @@ bool BringupUtil::newDevice()
         }
     } while (!inputValid);
 
-    for (auto led : device->getLeds()) {
-        led->setNone();
-    }
-    qInfo("Now all LEDs should be off. Is that correct? (y/n)");
-    std::cout << "> ";
-    cin >> input;
-    if (input.compare("y", Qt::CaseInsensitive) != 0) {
-        qInfo("That's bad :( Exiting for now (TODO: Test out existing quirks if they help)"); // TODO
-        return true;
-    }
-    ledIds.clear();
-    for (auto led : device->getLeds()) {
-        led->setStatic({0xFF, 0xFF, 0x00});
-        qInfo("Did a LED just turn yellow (tried %s)? (y/n)", qUtf8Printable(LedIdToString.value(led->getLedId())));
-        std::cout << "> ";
-        cin >> input;
-        if (input.compare("y", Qt::CaseInsensitive) == 0) {
-            ledIds.append(led->getLedId());
-        }
-        led->setNone();
-    }
-    if (ledIds.isEmpty()) {
-        qInfo("You said that no LED is supported. Exiting. TODO: quirks"); // TODO
-        return true;
-    }
-
     if (type == "mouse") {
         QString maxDPIstr;
         do {
             qInfo("What's the maximum DPI of the mouse (e.g. 16000)?");
             std::cout << "> ";
-            cin >> maxDPIstr;
+            maxDPIstr = cin.readLine();
             maxDPI = maxDPIstr.toUInt(nullptr, 10);
             if (maxDPI == 0) {
                 qCritical("Invalid DPI.");
