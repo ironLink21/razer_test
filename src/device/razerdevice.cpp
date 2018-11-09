@@ -250,6 +250,7 @@ QString RazerDevice::getKeyboardLayout()
             sendErrorReply(QDBusError::Failed);
         return "error";
     }
+    qDebug("Keyboard layout ID: 0x%02X", response_report.arguments[0]);
     return keyboardLayoutIds.value(response_report.arguments[0], "unknown");
 }
 

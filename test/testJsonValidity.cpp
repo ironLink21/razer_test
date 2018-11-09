@@ -76,8 +76,10 @@ void testJsonValidity::checkJsonDataValidity()
         QVERIFY2(devObj["name"].isString(), "Invalid device name - has to be a string.");
         qDebug() << "vid:" << devObj["vid"].toString();
         QVERIFY2(hexStringToUshort(devObj["vid"].toString()) == 0x1532, "Invalid vid - has to be \"1532\".");
+        QVERIFY2(devObj["vid"].toString().size() == 4, "Invalid vid - has to be four characters long.");
         qDebug() << "pid:" << devObj["pid"].toString();
         QVERIFY2(hexStringToUshort(devObj["pid"].toString()) != 0, "Invalid pid - has to be a hex number in string form.");
+        QVERIFY2(devObj["pid"].toString().size() == 4, "Invalid pid - has to be four characters long.");
         qDebug() << "type:" << devObj["type"].toString();
         QVERIFY2(validType.contains(devObj["type"].toString()), "Invalid device type.");
         qDebug() << "pclass:" << devObj["pclass"].toString();

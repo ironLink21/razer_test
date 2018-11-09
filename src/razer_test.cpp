@@ -141,12 +141,8 @@ bool getDeviceInfoFromJson(QJsonObject deviceObj, QString *name, QString *type, 
         features->append(featureVal.toString());
     }
     foreach (const QJsonValue &quirkVal, deviceObj["quirks"].toArray()) {
-        if (quirkVal.toString() == "mouse_matrix") {
-            quirks->append(RazerDeviceQuirks::MouseMatrix);
-        } else if (quirkVal.toString() == "matrix_brightness") {
-            quirks->append(RazerDeviceQuirks::MatrixBrightness);
-        } else if (quirkVal.toString() == "firefly_custom_frame") {
-            quirks->append(RazerDeviceQuirks::FireflyCustomFrame);
+        if (StringToQuirks.contains(quirkVal.toString())) {
+            quirks->append(StringToQuirks.value(quirkVal.toString()));
         } else {
             qCritical("Unhandled quirks string!");
         }
@@ -340,7 +336,13 @@ int main(int argc, char *argv[])
             qInfo() << "Setting LED to static with color #FFFF00";
             qDebug() << "LED object path:" << led->getObjectPath().path();
             led->setStatic({0xFF, 0xFF, 0x00});
+            led->setBrightness(255);
         }
+
+        BringupUtil bringupUtil = BringupUtil(razerDevice);
+        bringupUtil.testKeyboardLayout();
+        bringupUtil.testDPI();
+        bringupUtil.testPollRate();
     }
     return 0;
 
@@ -350,8 +352,8 @@ int main(int argc, char *argv[])
         qCritical("Failed to register D-Bus service at \"io.github.openrazer1\".");
         if (connection.lastError().isValid()) {
             qCritical("Additional information:");
-            qCritical(qUtf8Printable(connection.lastError().name()));
-            qCritical(qUtf8Printable(connection.lastError().message()));
+            qCritical("%s", qUtf8Printable(connection.lastError().name()));
+            qCritical("%s", qUtf8Printable(connection.lastError().message()));
         } else {
             qCritical("Maybe it's already running?");
         }
